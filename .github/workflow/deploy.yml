@@ -1,0 +1,55 @@
+name: CI/CD EKS invoice-api
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Récupérer le code
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      # 2. Configurer les credentials AWS
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-region: eu-west-3
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # 3. Se connecter à ECR pour pouvoir push l’image
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region eu-west-3 \
+            | docker login --username AWS \
+              --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-3.amazonaws.com
+
+      # 4. Builder l’image et la pousser dans ECR
+      - name: Build & Push Docker image
+        run: |
+          docker build -t invoice-api:latest app/invoice-api
+          docker tag invoice-api:latest \
+            ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-3.amazonaws.com/invoice-api:latest
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.eu-west-3.amazonaws.com/invoice-api:latest
+
+      # 5. Installer kubectl pour parler à Kubernetes
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      # 6. Mettre à jour kubeconfig pour cibler drakkar-cluster
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region eu-west-3 \
+            --name drakkar-cluster
+
+      # 7. Déployer sur le cluster EKS
+      - name: Deploy to EKS
+        run: |
+          kubectl apply -f k8s/invoice-deployment.yaml
+          kubectl apply -f k8s/invoice-service.yaml
+          kubectl rollout status deployment/invoice-api

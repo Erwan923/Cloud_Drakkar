@@ -1,0 +1,5 @@
+# Binaries and Terraform state
+terraform/awscliv2.zip
+terraform/terraform_*.zip
+terraform/terraform
+terraform/.terraform/
